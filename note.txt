@@ -1,0 +1,105 @@
+步骤：
+	1、加入Spring。
+		（1）、加入jar包	
+		（2）、配置web.xml文件
+		（3）、加入Spring的配置文件
+	2、加入Hibernate。
+		（1）、同时建立持久化类，和其对应的.hbm.xml文件，生成对应的数据表。
+		（2）、Spring整合Hibernate
+		（3）、步骤：
+			I、在类路径下建立hibernate.cfg.xml文件，在其中配置hibernate的基本属性。
+			II、建立持久化类，和其对应的.hbm.xml文件。
+			III、和Spring进行整合。	
+				①、加入c3p0和MySQL驱动
+				②、在Spring的配置文件中配置：数据源，SessionFactory，声明式事务
+			IV、启动项目，会看到生成对应的数据表。
+	3、加入struts2
+		（1）、加入jar包：若有重复的包，则需要删除版本较低的，否则会发生版本冲突
+		（2）、在web.xml文件中配置struts2的Filter
+		（3）、加入struts2的配置文件
+		（4）、整合Spring
+			I、加入Struts2的Spring插件的jar包
+			struts2-spring-plugin-2.3.15.1.jar
+			II、在Spring的配置文件中正常配置Action，注意Action的Scope为prototype
+			III、在Struts2的配置文件配置Action时，class属性指向该Action在IOC中的id
+			
+	4、完成功能	
+		（1）、获取所有的员工信息：若在Dao中只查询Employee的信息，而在Employee和Department还是使用的懒加载，
+		页面上还需要显示员工信息，此时会出现懒加载异常，代理对象不能被初始化。
+		
+		解决方法：	
+			I、打开懒加载：不推荐使用，性能很低
+			II、获取Employee时使用迫切左外连接同时初始化其关联的Department对象
+			III、使用OpenSessionInViewFilter：
+		（2）、删除员工信息：
+			I、正常删除：返回值需要时redirect类型，而且重定向到emp-list
+			II、确定要删除么？的提示使用jQuery完成
+			III、Ajax的使用，参见Struts2的文档里面的home.html
+		（3）、添加员工：
+			I、使用表单页面：需要先查询所有的部门信息
+			II、使用Struts2的ModelDriven和Preparable拦截器
+			III、时间是一个字符串，需要转为Date类型的对象		
+
+注意点：
+	1、config文件是新建的一个源码包，而不是一个文件夹。Source Folder
+	2、在Spring中，事务和切入点关联是在service方法中，一开始是在Action方法中，然后在DAO中执行数据库
+	的相关操作，再由service调用DAO中的方法，最后由Action调用Service中的方法。
+	3、在DAO中，通过Session获得数据库中的数据，然后再由service执行相关的dao中的方法，最终由action调用。
+	
+	
+		I、<action name="emp-*" class="employeeAction" method="{1}">
+			<result name="list">/WEB-INF/views/emp-list.jsp</result>
+			<result type="stream" name="ajax-success">
+				<param name="contentType">text/html</param>
+				<param name="inputName">inputStream</param>
+				
+			</result>
+			<result name="input">/WEB-INF/views/emp-input.jsp</result>
+			<result name="success" type="redirect">/emp-list</result>
+		</action>
+	
+		<!-- 3、配置事务切入点，再把事务属性和事务切入点关联起来 -->
+	
+		II、<aop:config>
+	  		<aop:pointcut expression="execution(* com.ck_ssh.service.*.*(..))"
+				id="txPointcut" />
+				<aop:advisor advice-ref="txAdvice" pointcut-ref="txPointcut" />
+			</aop:config>
+			
+	4、要实现添加操作：
+		I、首先就是要到添加页面，因为前面只是获取了Employee，所以还需要获取Department，一样的从Action到dao到service
+	并对Employee在Spring中进行相关配置，然后建立好添加页面后在Struts配置result后变能够跳转到添加页面。	
+		II、首先让Action类实现ModelDriven<Employee>, Preparable接口。
+		III、定义并使用新的拦截器栈
+			<!-- 定义新的拦截器栈，配置prepare拦截器栈的alwaysInvokePrepare参数值为false -->
+		<interceptors>
+			<interceptor-stack name="sshStack">
+				<interceptor-ref name="paramsPrepareParamsStack">
+					<param name="prepare.alwaysInvokePrepare">false</param>
+				</interceptor-ref>
+			</interceptor-stack>
+		</interceptors>
+
+		<!-- 使用新的拦截器栈 -->
+		<default-interceptor-ref name="sshStack"></default-interceptor-ref>
+		IV、然后再在Struts2的配置文件中配置：
+			<result name="success" type="redirect">/emp-list</result>
+		IIV、然后就是直接的save方法。
+		IIIV、实际上添加的就是model，model作为新的栈顶对象，里面存了新写的要添加的内容。	
+		
+	5、更新操作：
+		I、更新操作首先是点击Edit后通过lastName获取更新哪一行的数据，在dao得到数据后,然后在service中
+		让那一条数据的返回值为空
+			public boolean lastNameIsValid(String lastName) {
+		return employeeDao.getEmployeeByLastName(lastName) == null;
+	}
+	II、在Action中通过判断是空就执行修改操作，不是就不执行，最后返回和添加时一样的返回值得到保存	
+		public String validateLastName() throws UnsupportedEncodingException {
+		if (employeeService.lastNameIsValid(lastName)) {
+			inputStream = new ByteArrayInputStream("1".getBytes("UTF-8"));
+		} else {
+			inputStream = new ByteArrayInputStream("0".getBytes("UTF-8"));
+		}
+		return "ajax-success";
+	}
+			
